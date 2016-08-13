@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Kinect WebGL放风筝游戏。</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <script src="js/Three.min.js"></script>
+    <script src="js/Detector.js"></script>
+    <script src='js/RequestAnimationFrame.js'></script>
+    <script src='js/Stats.js'></script>
+    <script src="js/THREEx.FullScreen.js"></script>
+    <script src="js/THREEx.WindowResize.js"></script>
+    <script src="js/JSONLoader.js"></script>
+    <link href="css/main.css" rel="stylesheet" />
+
+    <script type="text/javascript">
+    var GAME = (function() {
+        var running=false;
+        var hide = function(id) {
+                document.getElementById(id).style.display = "none";
+            },
+            show = function(id) {
+                document.getElementById(id).style.display = "block";
+            };
+
+        return {
+            running: false,
+
+            win: function() {
+                show("win");
+                this.running = false;
+            },
+
+            lose: function() {
+                if (!this.running) return false;
+                crashSound.play();
+                show("lose");
+                this.running = false;
+            },
+
+            start: function() {
+                hide("start");
+                this.running = true;
+                music.play();
+            },
+
+            restart: function() {
+                NAVIGATION.reset();
+                hide("win");
+                hide("lose");
+                this.running = true;
+                music.currentTime = 0;
+            },
+
+            init: function() {
+                show("start");
+                init1();
+                animate();
+                NAVIGATION.set();
+            }
+        }
+    })();
+
+    var NAVIGATION = (function() {
+        var X_sensibility = 0.02,
+            Y_sensibility = 0.02,
+            Z_sensibility = 0.02,
+            speed = 0.5,
+            back = 1.08,
+            theta = 0,
+            gamespeed = 50,
+            phiMin = -Math.PI / 4, // 45
+            phi = 0;
+        var theta_x = 0,
+            phi_y = 0,
+            theta_z = 0,
+            angle = Math.PI; //值为1或-1时生效
+        var fall = -speed * Math.sin(Math.PI/12);
+        var keyDowns = [],
+            moveTheta = false,
+            movePhi = false,
+            delta = 0;
+        return {
+            keydown: function(event) {
+
+                event.preventDefault();
+                switch (event.keyCode) {
+                    case 37: //left 
+                        NAVIGATION.addKeyDown(37);
+                        break;
+                    case 39: //right 
+                        NAVIGATION.addKeyDown(39);
+                        break;
+                    case 38: //up 
+                        NAVIGATION.addKeyDown(38);
+                        break;
+                    case 40: //down 
+                        NAVIGATION.addKeyDown(40);
+                        break;
+                }
+            },
+
+            keyup: function(event) {
+                event.preventDefault();
+                switch (event.keyCode) {
+                    case 37: //left 
+                        NAVIGATION.delKeyDown(37);
+                        break;
+                    case 39: //right 
+                        NAVIGATION.delKeyDown(39);
+                        break;
+                    case 38: //up 
+                        NAVIGATION.delKeyDown(38);
+                        break;
+                    case 40: //down 
+                        NAVIGATION.delKeyDown(40);
+                        break;
+                }
+            },
+
+            addKeyDown: function(keyCode) {
+                if (keyDowns.indexOf(keyCode) !== -1) return;
+                keyDowns.push(keyCode);
+            },
+
+            delKeyDown: function(keyCode) {
+                keyDowns.splice(keyDowns.indexOf(keyCode), 1);
+            },
+
+            set: function() {
+                document.onkeydown = this.keydown;
+                document.onkeyup = this.keyup;
+            },
+
+            unset: function() {
+                document.onkeydown = null;
+                document.onkeyup = null;
+            },
+
+            move: function(keyCode) {
+                switch (keyCode) {
+                    case 37: //left 
+                        angle -= Math.PI / 180;
+                        angle = angle % (Math.PI * 2);
+                        NAVIGATION.moveXZni(angle);
+                        moveTheta = true;
+                        break;
+                    case 39: //right 
+                        angle += Math.PI / 180; angle = angle % (Math.PI * 2); NAVIGATION.moveXZshun(angle);
+
+                        moveTheta = true;
+                        break;
+                    case 38: //up 
+                        NAVIGATION.moveXY(0, 1);
+                        movePhi = true;
+                        break;
+                    case 40: //down 
+                        NAVIGATION.moveXY(0, -1);
+                        movePhi = true;
+                        break;
+
+                }
+            },
+
+            moveXY: function(x, y) {
+                theta_x = x;
+                phi_y = -y;
+                theta += x * X_sensibility * delta;
+
+                if (y > 0 || phi > phiMin) phi += y * Y_sensibility * delta;
+            },
+            moveXZni: function(angle) {
+                var radians = Math.sqrt(tux.position.x * tux.position.x + tux.position.z * tux.position.z);
+                tux.position.x = radians * Math.sin(angle);
+                tux.position.z = -radians * Math.cos(angle);
+
+                theta = Math.PI / 4;
+
+            },
+
+            moveXZshun: function(angle) {
+                var radians = Math.sqrt(tux.position.x * tux.position.x + tux.position.z * tux.position.z);
+                tux.position.x = radians * Math.sin(angle);
+                tux.position.z = -radians * Math.cos(angle);
+
+                theta = -Math.PI / 4;
+
+            },
+
+            update: function(raw_delta) {
+
+                delta = 2;
+                if (!tux) return;
+
+                moveTheta = false;
+                movePhi = false;
+
+                theta_x = 0;
+                phi_y = 0;
+
+                keyDowns.map(NAVIGATION.move);
+
+                if ((!moveTheta && theta >= Math.PI / 512) || (!moveTheta && -1 / 512 >= Math.PI / theta)) theta /= back;
+                if (!movePhi) phi /= back;
+
+                if (GAME.running) {
+                    tux.translateZ(1); //风筝自下垂
+                    tux.translateY(theta_x / 2); //左右键
+                    tux.translateY(phi_y * delta * 5); //上下键
+                    tux.translateZ(phi_y * delta * 7); //上下键
+
+                    if (((theta % Math.PI) > 0 && (theta % Math.PI) < 1 / 4) || ((theta % Math.PI) < 0 && (theta % Math.PI) > -1 / 4)) {
+                        tux.rotation.y = theta % Math.PI;
+                    }
+                    tux.rotation.z = angle;
+
+
+                    if (!bird1 && bird2)
+                        return;
+                   // console.log(clock.getElapsedTime());
+                }
+
+
+                camera.lookAt(tux.position);
+
+
+                spotLight.position.copy(tux.position);
+                spotLight.position.y += tux.position.y + 100;
+                spotLight.lookAt(tux.position);
+                pointLignt2.position.copy(tux.position);
+                pointLignt2.position.y = tux.position.y - 100;
+                pointLignt2.position.z = tux.position.z - 200;
+                pointLignt2.lookAt(tux.position);
+               // console.log(tux.position);
+                shadowLight.position.copy(spotLight.position);
+                shadowLight.lookAt(tux.position);
+                return true;
+            },
+
+            reset: function() {
+                theta = phi = 0;
+                tux.position.set(0, 0, 0);
+            }
+        }
+    })();
+
+
+
+    var stats, scene, renderer;
+    var camera, cameraControl,
+        tux,
+        tux1,
+        tux2,
+        bird1, bird2,
+        line,
+        skyboxMesh,
+        spotLight, pointLignt2, spotLight3, pointLight, shadowLight,
+        music, crashSound, mixer1s = [],
+        mixer2s = [],
+        clock = new THREE.Clock();
+
+    function init1() {
+
+        if (Detector.webgl) {
+            renderer = new THREE.WebGLRenderer({
+                antialias: true, // 平滑
+                preserveDrawingBuffer: true
+            });;
+            renderer.setClearColor(0xBBBBBB, 1);
+            renderer.shadowMapEnabled = true;
+            renderer.shadowMapSoft = true;
+        } else {
+            renderer = new THREE.CanvasRenderer();
+        }
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('container').appendChild(renderer.domElement);
+
+        // STATS
+        stats = new Stats();
+        container.appendChild(stats.domElement);
+
+        //music
+        music = document.createElement("audio");
+        var sourceMusic = document.createElement("source");
+        sourceMusic.src = "audio/play.mp3";
+        music.loop = true;
+        music.preload = true;
+        music.autoplay = false;
+        music.appendChild(sourceMusic);
+
+        scene = new THREE.Scene();
+
+        camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 100000);
+
+        camera.position.set(0, 0, 0); //相机的初始位置
+
+        camera.updateMatrix();
+
+        scene.add(camera);
+
+        THREEx.WindowResize(renderer, camera);
+
+        var jsonLoader = new THREE.JSONLoader();
+
+        jsonLoader.load('model/kite.js', function addModelToScene(geometry, materials) {
+            var material = new THREE.MeshFaceMaterial(materials);
+            tux = new THREE.Mesh(geometry, material);
+
+            tux.scale.x = tux.scale.y = tux.scale.z = 15;
+
+
+            tux.rotation.x = Math.PI / 2.2;
+            tux.updateMatrix();
+
+            tux.position.x = 0;
+            tux.position.y = 1585;
+            tux.position.z = 4177;
+            scene.add(tux);
+
+            var geometry = new THREE.Geometry();
+            var material = new THREE.LineBasicMaterial({
+                color: 0xFF0000
+            });
+
+            // 线的材质可以由2点的颜色决定
+            var p1 = new THREE.Vector3(0, -100, 0);
+            var p2 = new THREE.Vector3(tux.position.x, tux.position.y, tux.position.z);
+            geometry.vertices.push(p1);
+            geometry.vertices.push(p2);
+            line = new THREE.Line(geometry, material, THREE.LinePieces);
+            line.name = true;
+            scene.add(line);
+
+
+        });
+
+
+        // // 卡车
+
+        var jsonLoader = new THREE.JSONLoader();
+        jsonLoader.load("model/luhu.js", function addModelToScene(geometry, materials) {
+            var material = new THREE.MeshFaceMaterial(materials);
+            var luhu = new THREE.Mesh(geometry, material);
+            luhu.scale.set(0.3, 0.3, 0.3);
+            luhu.position.set(1400, -300, 5000);
+            scene.add(luhu);
+        });
+
+        //飞鸟
+
+        jsonLoader.load("model/flamingo.js", function(geometry) {
+
+            var material = new THREE.MeshPhongMaterial({
+                color: 0xffffff,
+                specular: 0xffffff,
+                shininess: 20,
+                morphTargets: true,
+                vertexColors: THREE.FaceColors,
+                shading: THREE.FlatShading
+            });
+            bird1 = new THREE.Mesh(geometry, material);
+            bird2 = bird1.clone();
+            bird1.scale.set(3, 3, 3);
+            bird2.scale.set(2, 2, 2);
+            bird1.rotation.y = -1;
+            bird2.rotation.y = -1;
+            bird1.position.set(500, 5000, 5000);
+            bird2.position.set(800, 5000, 5500);
+            spotLight3.lookAt(bird1.position);
+            scene.add(bird1);
+            scene.add(bird2);
+            var mixer1 = new THREE.AnimationMixer(bird1);
+            mixer1.addAction(new THREE.AnimationAction(geometry.animations[0]).warpToDuration(1));
+            mixer1s.push(mixer1);
+
+            var mixer2 = new THREE.AnimationMixer(bird2);
+            mixer2.addAction(new THREE.AnimationAction(geometry.animations[0]).warpToDuration(1));
+            mixer2s.push(mixer2);
+        });
+
+
+        var imagePrefix = "images/skybox1/";
+        var directions = ["posx", "negx", "posy", "negy", "posz", "negz"];
+        var imageSuffix = ".jpg";
+        var skyGeometry = new THREE.CubeGeometry(100000, 100000, 100000);
+
+        var materialArray = [];
+        for (var i = 0; i < 6; i++)
+            materialArray.push(new THREE.MeshBasicMaterial({
+                map: THREE.ImageUtils.loadTexture(imagePrefix + directions[i] + imageSuffix),
+                side: THREE.BackSide
+            }));
+        var skyMaterial = new THREE.MeshFaceMaterial(materialArray);
+        skyboxMesh = new THREE.Mesh(skyGeometry, skyMaterial);
+        scene.add(skyboxMesh);
+
+        var ambientLight = new THREE.AmbientLight(0x555555);
+        scene.add(ambientLight);
+
+
+        spotLight = new THREE.SpotLight(0xffffff, 2, 0, Math.PI / 4, 0);
+        pointLignt2 = new THREE.PointLight(0xffffff, 1.0);
+        spotLight3 = new THREE.SpotLight(0xffffff, 2, 0, Math.PI / 4, 0);
+        spotLight3.position.set(800, 4500, 5000)
+        spotLight.castShadow = false;
+        scene.add(spotLight);
+        scene.add(pointLignt2);
+        scene.add(spotLight3);
+
+        shadowLight = new THREE.DirectionalLight(0xffffff, 4, 1);
+
+        shadowLight.position.set(0, 0, -1);
+        shadowLight.castShadow = true;
+        shadowLight.onlyShadow = true;
+        shadowLight.shadowCameraNear = 2;
+        shadowLight.shadowCameraFar = 200;
+        shadowLight.shadowCameraLeft = -10;
+        shadowLight.shadowCameraRight = 10;
+        shadowLight.shadowCameraTop = 10;
+        shadowLight.shadowCameraBottom = -10;
+        shadowLight.shadowCameraVisible = false;
+        shadowLight.shadowBias = 0;
+        shadowLight.shadowDarkness = 0.5;
+        shadowLight.shadowMapWidth = 512;
+        shadowLight.shadowMapHeight = 512;
+        scene.add(shadowLight);
+
+    }
+
+    // 游戏循环
+    function animate() {
+        requestAnimationFrame(animate);
+        // do the render
+        render();
+        stats.update();
+    }
+
+    function render() {
+
+
+        NAVIGATION.update(clock.getDelta());
+
+        if (line && tux) {
+            for (i = scene.children.length - 1; i >= 0; i--) {
+                obj = scene.children[i];
+                if (obj.name) {
+                    scene.remove(obj);
+                }
+            }
+            var geometry = new THREE.Geometry();
+            var material = new THREE.LineBasicMaterial({
+                color: 0xFFFFFF
+            });
+            var p1 = new THREE.Vector3(0, -100, 0);
+            p2 = new THREE.Vector3(tux.position.x + 130, tux.position.y + 100, tux.position.z);
+            geometry.vertices.push(p1);
+            geometry.vertices.push(p2);
+            line = new THREE.Line(geometry, material);
+            line.name = true;
+            scene.add(line);
+
+            tux.translateY(100 * Math.sin(0.01 * (Math.random() - 0.5) * Math.PI));
+            tux.translateX(100 * Math.sin(0.01 * (Math.random() - 0.5) * Math.PI));
+
+        }
+        for (var i = 0; i < mixer1s.length; i++) {
+
+            mixer1s[i].update(0.04);
+            mixer2s[i].update(0.05);
+
+        }
+        renderer.render(scene, camera);
+    }
+     window.onload=function(){GAME.init();
+       var starta=document.querySelector('#starta');
+        starta.addEventListener('click',GAME.start.bind(GAME),false);
+     }
+    </script>
+</head>
+
+<body>
+    <div id="container"></div>
+    <div class='windoz' id='win'>
+        <h1>恭喜您!</h1>
+        <h2>您赢了 :)</h2>
+        <br/>
+        <a href='#'>重玩</a>
+    </div>
+    <div class='windoz' id='lose'>
+        <img src='images/noob.png' style='float: right' />
+        <h1>菜鸟 !</h1>
+        <a href='#'>再来一次</a>
+    </div>
+    <div class='windoz' id='start'>
+        <h1>Kinect放风筝游戏</h1>
+        <!-- <img src='images/arrowKeys.png' style='float: right' /> -->
+        <p>你可以模拟放风筝的游戏场景，摸索一下很快就会啦。推一下即可进入游戏哦~</p>
+        <div style="text-align:center;" id="gamebegin"><a href='#' id="starta" >开始</a></div>
+    </div>
+</body>
+
+</html>
